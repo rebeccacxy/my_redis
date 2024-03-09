@@ -1,3 +1,5 @@
+from app.types import types
+
 class DB:
     def __init__(self, db=None):
         if db is None:
@@ -5,6 +7,7 @@ class DB:
         self._db = db
 
     def get(self, item):
+        print(self._db)
         return self._db.get(item)
     
     def set(self, item, value):
@@ -13,8 +16,6 @@ class DB:
     
     def rpush(self, item, values):
         curr_list = self._db.setdefault(item, [])
-        if isinstance(values, bytes):
-            values = values.decode()
         curr_list.extend(values)
         return len(curr_list)
     
@@ -33,6 +34,8 @@ class DB:
     def blpop(self, key):
         value = self._db.get(key, [])
         if value:
+            if isinstance(value, bytes):
+                value = value.decode()
             element = value.pop(0)
             return element
-        return "WAIT"
+        return types.WAIT
