@@ -1,6 +1,5 @@
 import asyncio
 import io
-import app.redis_db as redis_db
 
 def parse_wire_protocol(message):
     return _parse_wire_protocol(io.BytesIO(message))
@@ -17,7 +16,9 @@ def _parse_wire_protocol(msg_buffer):
         if msg_length == -1:
             return None
         result = msg_buffer.read(msg_length)
-        msg_buffer.readline() # move past \r\n
+        # There's a '\r\n' that comes after a bulk string
+        # so we .readline() to move passed that crlf.
+        msg_buffer.readline()
         return result
     elif msg_type == '*':
         array_length = int(remaining)
@@ -42,8 +43,8 @@ def serialize_to_wire(value):
         return base
 
 class RedisServerProtocol(asyncio.Protocol):
-    def __init__(self, db):
-        self._db = db
+    def __init__(self, redis):
+        self._redis = redis
         self.transport = None
 
     def connection_made(self, transport):
@@ -51,32 +52,31 @@ class RedisServerProtocol(asyncio.Protocol):
 
     def data_received(self, data):
         parsed = parse_wire_protocol(data)
+        # parsed is an array of [command, *args]
         command = parsed[0].decode().lower()
-        if command == 'get':
-            response = self._db.get(parsed[1])
-        elif command == 'set':
-            response = self._db.set(parsed[1], parsed[2])
+        try:
+            method = getattr(self._redis, command)
+        except AttributeError:
+            self.transport.write(
+                b"-ERR unknown command " + parsed[0] + b"\r\n")
+            return
+        result = method(*parsed[1:])
+        serialized = serialize_to_wire(result)
+        self.transport.write(serialized)
 
-        wire_response = serialize_to_wire(response)
-        self.transport.write(wire_response)
+class WireRedisConverter(object):
+    def __init__(self, redis):
+        self._redis = redis
 
-def main(hostname='localhost', port=6379):
-    loop = asyncio.get_event_loop()
-    db = redis_db.DB()
-    protocol_factory = lambda: RedisServerProtocol(db)
+    def lrange(self, name, start, end):
+        return self._redis.lrange(name, int(start), int(end))
 
-    coro = loop.create_server(protocol_factory,
-                              hostname, port)
-    server = loop.run_until_complete(coro)
-    print("Listening on port {}".format(port))
-    try:
-        loop.run_forever()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        server.close()
-        loop.run_until_complete(server.wait_closed())
-        loop.close()
+    def hmset(self, name, *args):
+        converted = {}
+        iter_args = iter(list(args))
+        for key, val in zip(iter_args, iter_args):
+            converted[key] = val
+        return self._redis.hmset(name, converted)
 
-if __name__ == "__main__":
-    main()
+    def __getattr__(self, name):
+        return getattr(self._redis, name)
