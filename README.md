@@ -8,7 +8,9 @@ Redis is an in-memory key-value store, which can hold values that are not restri
 
 ## Implementation
 
-The idea is to use `asyncio` to provide a server that accepts client connections that can parse the wire protocol for redis. There is 1 `RedisServerProtocol` per client connection, which stores state that is scoped to the lifetime of that connection. The protocol class is handed to the create_server, which is called on an event loop instance.
+The idea is to use `asyncio` to provide a server that accepts client connections that can parse the wire protocol for redis. There is 1 `RedisServerProtocol` per client connection, which stores state that is scoped to the lifetime of that connection. The protocol class is handed to the `create_server`, which is called on an event loop instance.
+
+**Note: No data persistence!**
 
 ## Functionality
 
@@ -22,7 +24,6 @@ The idea is to use `asyncio` to provide a server that accepts client connections
 - LPOP
 - BLPOP
 
-Note: No data persistence!
 
 ### Blocking Left Pop (BLPOP)
 
@@ -35,3 +36,10 @@ Since Client 1 and 2 are indefinitely waiting, Client 3 will send `bar` to which
 
 ## TODO
 - Replication
+
+## How to run
+```bash
+./run_server.sh
+
+```
+Then install and run `redis-cli` 
