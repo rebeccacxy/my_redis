@@ -1,4 +1,5 @@
 from app.types import types
+import time
 
 class DB:
     def __init__(self, db=None):
@@ -6,16 +7,33 @@ class DB:
             db = {}
         self._db = db
 
-    def get(self, item):
-        print(self._db)
-        return self._db.get(item)
+    def get(self, key):
+        result = self._db.get(key)
+        if result is None:
+            return
+        
+        (value, expiry) = result
+        if expiry is None:
+            return value
+        else:
+            # key has timed out, remove from db
+            if int(time.time() * 1000) > int(expiry.decode()):
+                del self._db[key]
+
+        return value
     
-    def set(self, item, value):
-        self._db[item] = value
+    def set(self, key, value, ttl=None):
+        if ttl is None:
+            self._db[key] = (value, ttl)
+            return True
+        
+        expiry = str(int(ttl.decode()) * 1000 + int(time.time() * 1000))
+        self._db[key] = (value, expiry.encode())
         return True
     
-    def rpush(self, item, values):
-        curr_list = self._db.setdefault(item, [])
+    def rpush(self, key, values):
+        # TODO: add expiry for rpush 
+        curr_list = self._db.setdefault(key, [])
         curr_list.extend(values)
         return len(curr_list)
     

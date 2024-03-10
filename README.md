@@ -14,6 +14,7 @@ The idea is to use `asyncio` to provide a server that accepts client connections
 
 - GET
 - SET
+    - `SET foo bar ex 2` sets expiry of `key = foo` to 2 seconds
 - PUBLISH
 - SUBSCRIBE
 - RPUSH
@@ -33,5 +34,4 @@ Client 3: RPUSH foo bar
 Since Client 1 and 2 are indefinitely waiting, Client 3 will send `bar` to whichever client has been waiting the longest. 
 
 ## TODO
-- Implement expiry
 - Replication

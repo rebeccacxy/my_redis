@@ -2,6 +2,7 @@ import asyncio
 import app.redis_db as redis_db
 import app.parser as parser
 from app.types import types
+import sys
 
 p = parser.Parser()
     
@@ -54,8 +55,8 @@ class RedisServerProtocol(asyncio.Protocol):
         command = parsed[0].lower().decode()
         response = None
         if len(parsed) == 1:
-            print("Error: Missing value")
-            response = "Error: Missing value"
+            print('Error: Missing value')
+            response = 'Error: Missing value'
         
         if command == types.SUBSCRIBE:
             response = self._pubsub.subscribe(parsed[1], self.transport)
@@ -64,7 +65,10 @@ class RedisServerProtocol(asyncio.Protocol):
         elif command == types.GET:
             response = self._db.get(parsed[1])
         elif command == types.SET:
-            response = self._db.set(parsed[1], parsed[2])
+            if len(parsed) == 3:
+                response = self._db.set(parsed[1], parsed[2])
+            elif (parsed[3].lower() == b'ex'):
+                response = self._db.set(parsed[1], parsed[2], parsed[4])
         elif command == types.RPUSH:
             response = self._db.rpush(parsed[1], parsed[2:])
             asyncio.create_task(self._key_blocker.data_for_key(parsed[1], parsed[2]))
@@ -92,6 +96,9 @@ class ProtocolFactory:
 def main(hostname='localhost', port=6379):
     loop = asyncio.get_event_loop()
     protocol_factory = ProtocolFactory(RedisServerProtocol, redis_db.DB(), KeyBlocker(), PubSub(),)
+
+    if len(sys.argv) >= 2 and sys.argv[1] == "--port":
+        port = int(sys.argv[2])
 
     coro = loop.create_server(protocol_factory,
                               hostname, port)
