@@ -50,36 +50,69 @@ class RedisServerProtocol(asyncio.Protocol):
     def connection_made(self, transport):
         self.transport = transport
 
+    def subscribe(self, args):
+        return self._pubsub.subscribe(args[0], self.transport)
+
+    def ping(self, args):
+        return 'PONG'
+
+    def echo(self, args):
+        return args[0].lower().decode()
+
+    def publish(self, args):
+        return self._pubsub.publish(args[0], args[1])
+
+    def get(self, args):
+        return self._db.get(args[0])
+
+    def set(self, args):
+        if len(args) == 2:
+            return self._db.set(args[0], args[1])
+        elif args[2].lower() == b'px':
+            return self._db.set(args[0], args[1], int(args[3].decode()))
+
+    def rpush(self, args):
+        asyncio.create_task(self._key_blocker.data_for_key(args[0], args[1]))
+        return self._db.rpush(args[0], args[1:])
+
+    def lrange(self, args):
+        return self._db.lrange(args[0], int(args[1]), int(args[2]))
+
+    def blpop(self, args):
+        response = self._db.blpop(args[0])
+        if response == types.WAIT:
+            queue = self._key_blocker.wait_for_key(args[0], self.transport)
+            asyncio.create_task(queue)
+            return
+        
+    def info(self, args):
+        return 'role:master'
+
+    def parse_command(self, data):
+        return p.parse_wire_protocol(data)
+
+    def serialize_response(self, response):
+        return p.serialize_to_wire(response)
+
     def data_received(self, data):
         parsed = p.parse_wire_protocol(data) # [command, arg1, arg2]
-        command = parsed[0].lower().decode()
+        command, args = parsed[0].lower().decode(), parsed[1:]
         response = None
-        if len(parsed) == 1:
-            print('Error: Missing value')
-            response = 'Error: Missing value'
-        
-        if command == types.SUBSCRIBE:
-            response = self._pubsub.subscribe(parsed[1], self.transport)
-        elif command == types.PUBLISH:
-            response = self._pubsub.publish(parsed[1], parsed[2])
-        elif command == types.GET:
-            response = self._db.get(parsed[1])
-        elif command == types.SET:
-            if len(parsed) == 3:
-                response = self._db.set(parsed[1], parsed[2])
-            elif (parsed[3].lower() == b'ex'):
-                response = self._db.set(parsed[1], parsed[2], parsed[4])
-        elif command == types.RPUSH:
-            response = self._db.rpush(parsed[1], parsed[2:])
-            asyncio.create_task(self._key_blocker.data_for_key(parsed[1], parsed[2]))
-        elif command == types.LRANGE:
-            response = self._db.lrange(parsed[1], int(parsed[2]), int(parsed[3]))
-        elif command == types.BLPOP:
-            response = self._db.blpop(parsed[1])
-            if response == types.WAIT:
-                queue = self._key_blocker.wait_for_key(parsed[1], self.transport)
-                asyncio.create_task(queue)
-                return
+
+        command_dict = {
+            types.SUBSCRIBE: self.subscribe,
+            types.PING: self.ping,
+            types.ECHO: self.echo,
+            types.PUBLISH: self.publish,
+            types.GET: self.get,
+            types.SET: self.set,
+            types.RPUSH: self.rpush,
+            types.LRANGE: self.lrange,
+            types.BLPOP: self.blpop,
+            types.INFO: self.info
+        }
+
+        response = command_dict.get(command)(args)
 
         serialized = p.serialize_to_wire(response)
         self.transport.write(serialized)

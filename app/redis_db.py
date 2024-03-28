@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 from app.types import types
 import time
 
@@ -7,6 +8,11 @@ class DB:
             db = {}
         self._db = db
 
+    def is_expired(self, expiry_time):
+        if expiry_time:
+            return expiry_time < datetime.now()
+        return False
+
     def get(self, key):
         result = self._db.get(key)
         if result is None:
@@ -15,10 +21,8 @@ class DB:
         (value, expiry) = result
         if expiry is None:
             return value
-        else:
-            # key has timed out, remove from db
-            if int(time.time() * 1000) > int(expiry.decode()):
-                del self._db[key]
+        elif self.is_expired(expiry):
+            return None
 
         return value
     
@@ -27,12 +31,11 @@ class DB:
             self._db[key] = (value, ttl)
             return True
         
-        expiry = str(int(ttl.decode()) * 1000 + int(time.time() * 1000))
-        self._db[key] = (value, expiry.encode())
+        expiry = datetime.now() + timedelta(milliseconds=ttl) if ttl else None
+        self._db[key] = (value, expiry)
         return True
     
     def rpush(self, key, values):
-        # TODO: add expiry for rpush 
         curr_list = self._db.setdefault(key, [])
         curr_list.extend(values)
         return len(curr_list)
