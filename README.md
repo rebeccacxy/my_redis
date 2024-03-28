@@ -16,23 +16,19 @@ The idea is to use `asyncio` to provide a server that accepts client connections
 
 - GET
 - SET
-    - `SET foo bar ex 2` sets expiry of `key = foo` to 2 seconds
+    - `SET foo bar px 2000` sets expiry of `key = foo` to 2 seconds
 - PUBLISH
 - SUBSCRIBE
 - RPUSH
 - LRANGE
 - LPOP
 - BLPOP
-
-
-### Blocking Left Pop (BLPOP)
-
-```Bash
-Client 1: BLPOP foo
-Client 2: BLPOP foo
-Client 3: RPUSH foo bar
-```
-Since Client 1 and 2 are indefinitely waiting, Client 3 will send `bar` to whichever client has been waiting the longest. 
+    ```Bash
+    Client 1: BLPOP foo
+    Client 2: BLPOP foo
+    Client 3: RPUSH foo bar
+    ```
+    Since Client 1 and 2 are indefinitely waiting, Client 3 will send `bar` to whichever client has been waiting the longest. 
 
 ## TODO
 - Replication

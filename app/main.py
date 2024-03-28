@@ -3,6 +3,7 @@ import app.redis_db as redis_db
 import app.parser as parser
 from app.types import types
 import sys
+import argparse
 
 p = parser.Parser()
     
@@ -41,11 +42,12 @@ class KeyBlocker:
             print("%s put in queue!", value)
 
 class RedisServerProtocol(asyncio.Protocol):
-    def __init__(self, db, key_blocker, pubsub):
+    def __init__(self, db, key_blocker, pubsub, role):
         self._db = db
         self._key_blocker = key_blocker
         self._pubsub = pubsub
         self.transport = None
+        self.role = role
 
     def connection_made(self, transport):
         self.transport = transport
@@ -86,7 +88,7 @@ class RedisServerProtocol(asyncio.Protocol):
             return
         
     def info(self, args):
-        return 'role:master'
+        return f'role:{self.role}'
 
     def parse_command(self, data):
         return p.parse_wire_protocol(data)
@@ -128,11 +130,21 @@ class ProtocolFactory:
     
 def main(hostname='localhost', port=6379):
     loop = asyncio.get_event_loop()
-    protocol_factory = ProtocolFactory(RedisServerProtocol, redis_db.DB(), KeyBlocker(), PubSub(),)
 
-    if len(sys.argv) >= 2 and sys.argv[1] == "--port":
-        port = int(sys.argv[2])
+    argParser = argparse.ArgumentParser(description="Start server")
+    argParser.add_argument("--port", dest="port", default=6379)
+    argParser.add_argument("--replicaof", nargs=2, metavar=("host", "port"))
+    args = argParser.parse_args()
 
+    if args.port:
+        port = args.port
+
+    if args.replicaof:
+        role = 'slave'
+    else:
+        role = 'master'
+    
+    protocol_factory = ProtocolFactory(RedisServerProtocol, redis_db.DB(), KeyBlocker(), PubSub(), role, )
     coro = loop.create_server(protocol_factory,
                               hostname, port)
     server = loop.run_until_complete(coro)
