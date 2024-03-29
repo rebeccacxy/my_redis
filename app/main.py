@@ -1,8 +1,8 @@
 import asyncio
+import random
 import app.redis_db as redis_db
 import app.parser as parser
-from app.types import types
-import sys
+from app.types import types, roles
 import argparse
 
 p = parser.Parser()
@@ -41,13 +41,33 @@ class KeyBlocker:
             await queue.put(value)
             print("%s put in queue!", value)
 
+class ReplicaClient:
+    def __init__(self, master_host: str, master_port: int) -> None:
+        self._master_host = master_host
+        self._master_port = master_port
+
+    async def handshake(self):
+        self._reader, self._writer = await asyncio.open_connection(
+            self._master_host, self._master_port
+        )
+        response = p.serialize_to_wire([types.PING.encode()])
+        print("Response:", p.parse_wire_protocol(response))
+        self._writer.write(response)
+        await self._writer.drain()
+
+
 class RedisServerProtocol(asyncio.Protocol):
-    def __init__(self, db, key_blocker, pubsub, role):
+    def __init__(self, client, db, key_blocker, pubsub, role, master_host, master_port) -> None:
         self._db = db
         self._key_blocker = key_blocker
         self._pubsub = pubsub
         self.transport = None
         self.role = role
+        self.replid = random.randbytes(20).hex()
+        self.repl_offset = 0
+        self.master_host = master_host
+        self.master_port = master_port
+        self.client = client
 
     def connection_made(self, transport):
         self.transport = transport
@@ -88,7 +108,14 @@ class RedisServerProtocol(asyncio.Protocol):
             return
         
     def info(self, args):
-        return f'role:{self.role}'
+        info = {
+            'role': self.role,
+            'master_replid': self.replid,
+            'master_repl_offset': self.repl_offset
+            }
+
+        info = " ".join(f"{k}:{v}" for k, v in info.items())
+        return info
 
     def parse_command(self, data):
         return p.parse_wire_protocol(data)
@@ -115,7 +142,6 @@ class RedisServerProtocol(asyncio.Protocol):
         }
 
         response = command_dict.get(command)(args)
-
         serialized = p.serialize_to_wire(response)
         self.transport.write(serialized)
 
@@ -127,36 +153,41 @@ class ProtocolFactory:
 
     def __call__(self):
         return self._protocol_cls(*self._args, **self._kwargs)
-    
-def main(hostname='localhost', port=6379):
+
+async def main(hostname='localhost', port=6379):
     loop = asyncio.get_event_loop()
 
     argParser = argparse.ArgumentParser(description="Start server")
     argParser.add_argument("--port", dest="port", default=6379)
-    argParser.add_argument("--replicaof", nargs=2, metavar=("host", "port"))
+    argParser.add_argument("--replicaof", nargs=2)
     args = argParser.parse_args()
 
     if args.port:
         port = args.port
 
+    role = roles.SLAVE if args.replicaof else roles.MASTER
+    master_host, master_port = None, None
     if args.replicaof:
-        role = 'slave'
-    else:
-        role = 'master'
+        master_host = args.replicaof[0]
+        master_port = args.replicaof[1]
+
+    protocol_factory = ProtocolFactory(RedisServerProtocol, redis_db.DB(), KeyBlocker(), PubSub(), role, master_host, master_port)
+    server = await loop.create_server(protocol_factory,
+                            hostname, port, start_serving=False)
     
-    protocol_factory = ProtocolFactory(RedisServerProtocol, redis_db.DB(), KeyBlocker(), PubSub(), role, )
-    coro = loop.create_server(protocol_factory,
-                              hostname, port)
-    server = loop.run_until_complete(coro)
     print("Listening on port {}".format(port))
+
     try:
-        loop.run_forever()
+        async with server:
+            if role == roles.SLAVE:
+                await ReplicaClient(master_host, master_port).handshake()
+            await server.start_serving()
+            await server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
         server.close()
-        loop.run_until_complete(server.wait_closed())
-        loop.close()
+        await server.wait_closed()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

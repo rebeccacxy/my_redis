@@ -11,3 +11,7 @@ class types:
     INFO = 'info'
 
     WAIT = 'WAIT'
+
+class roles:
+    MASTER = 'master'
+    SLAVE = 'slave'
