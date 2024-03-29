@@ -1,6 +1,5 @@
 from datetime import datetime, timedelta
 from app.types import types
-import time
 
 class DB:
     def __init__(self, db=None):

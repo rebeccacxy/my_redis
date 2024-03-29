@@ -1,5 +1,5 @@
 import asyncio
-import app.redis_db as redis_db
+from app.redis_db import DB
 import app.parser as parser
 from app.server import RedisReplicationServerProtocol, RedisServerProtocol, ProtocolFactory
 from app.types import types, roles
@@ -41,14 +41,7 @@ class KeyBlocker:
             await queue.put(value)
             print("%s put in queue!", value)
 
-    
-async def start_server(protocol_factory, hostname, port):
-    server = await asyncio.start_server(protocol_factory,
-                            hostname, port)
-    async with server:
-        await server.serve_forever()
-
-async def start_replica_server(hostname, port):
+async def start_replication_server(hostname, port):
     await asyncio.sleep(1)  # ensure server is up
     _, _ = await asyncio.get_event_loop().create_connection(
         RedisReplicationServerProtocol, hostname, port)
@@ -68,15 +61,14 @@ async def main(hostname='localhost', port=6379):
         master_host = args.replicaof[0]
         master_port = args.replicaof[1]
 
-    protocol_factory = ProtocolFactory(RedisServerProtocol, redis_db.DB(), KeyBlocker(), PubSub(), role, master_host, master_port)
+    protocol_factory = ProtocolFactory(RedisServerProtocol, DB(), KeyBlocker(), PubSub(), role, master_host, master_port)
     loop = asyncio.get_event_loop()
     server = await loop.create_server(protocol_factory,
                             hostname, port)
     try:
         async with server:
             if role == roles.SLAVE:
-                await start_replica_server(master_host, master_port)
-            await server.start_serving()
+                await start_replication_server(master_host, master_port)
             await server.serve_forever()
     finally:
         server.close()
