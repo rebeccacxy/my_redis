@@ -1,16 +1,19 @@
 # my_redis
 
-This is a pure-Python implementation of the Redis key-value store (with a small subset of its features), just for practice.
+This is a pure-Python implementation of Redis (just a small subset of its features). I learn about event loops and the asyncio library here.
 
-## Background
-
-Redis is an in-memory key-value store, which can hold values that are not restricted to strings (lists, hashes, sets, ...). It is efficient due to its in-memory data structures and single-threaded architecture. 
+Redis is an in-memory key-value store, which can hold values that are not restricted to strings (lists, hashes, sets, etc.). It is efficient due to its in-memory data structures and single-threaded architecture. 
 
 ## Implementation
 
-The idea is to use `asyncio` to provide a server that accepts client connections that can parse the wire protocol for redis. There is 1 `RedisServerProtocol` per client connection, which stores state that is scoped to the lifetime of that connection. The protocol class is handed to the `create_server`, which is called on an event loop instance.
+The idea is to use `asyncio` to provide a server that accepts client connections that can parse the wire protocol for redis. There is one `RedisServerProtocol` per client connection, which stores state that is scoped to the lifetime of that connection. The protocol class is handed to `create_server`, which is called on an event loop instance.
 
-**Note: No data persistence!**
+**Event loop**
+```
+Event loop 
+--> wait_for_key --> queue.get() --> yield --> future
+--> value for key --> queue.put() --> value unlocks future --> yield on value --> resume execution
+```
 
 ## Functionality
 
@@ -29,9 +32,11 @@ The idea is to use `asyncio` to provide a server that accepts client connections
     Client 3: RPUSH foo bar
     ```
     Since Client 1 and 2 are indefinitely waiting, Client 3 will send `bar` to whichever client has been waiting the longest. 
+- Server replication
 
 ## TODO
-- Replication
+- PSYNC
+- RDB persistence
 
 ## How to run
 ```bash
